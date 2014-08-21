@@ -150,6 +150,7 @@ _lthread_io_add(struct lthread *lt)
         errno = lt->io.err;
 }
 
+// 进行读操作
 ssize_t
 lthread_io_read(int fd, void *buf, size_t nbytes)
 {

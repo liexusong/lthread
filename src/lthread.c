@@ -55,6 +55,8 @@ static pthread_once_t key_once = PTHREAD_ONCE_INIT;
 
 
 
+// 交换执行上下文
+
 int _switch(struct cpu_ctx *new_ctx, struct cpu_ctx *cur_ctx);
 #ifdef __i386__
 __asm__ (
@@ -112,6 +114,7 @@ __asm__ (
 "       ret                                              \n"
 );
 #endif
+
 
 static void
 _exec(void *lt)
