@@ -57,6 +57,7 @@ TAILQ_HEAD(lthread_q, lthread);
 
 typedef void (*lthread_func)(void *);
 
+// CPU执行上下文
 struct cpu_ctx {
     void     *esp;
     void     *ebp;
@@ -81,6 +82,7 @@ enum lthread_compute_st {
     LT_COMPUTE_FREE,
 };
 
+// 协程的状态值
 enum lthread_st {
     LT_ST_WAIT_READ,    /* lthread waiting for READ on socket */
     LT_ST_WAIT_WRITE,   /* lthread waiting for WRITE on socket */
@@ -99,6 +101,7 @@ enum lthread_st {
     LT_ST_WAIT_IO_WRITE /* lthread waiting for WRITE IO to finish */
 };
 
+// 协程结构对象
 struct lthread {
     struct cpu_ctx          ctx;            /* cpu ctx info */
     lthread_func            fun;            /* func lthread is running */
@@ -147,7 +150,7 @@ struct lthread_cond {
 
 struct lthread_sched {
     uint64_t            birth;
-    struct cpu_ctx      ctx;
+    struct cpu_ctx      ctx;   // 主协程CPU执行上下文
     void                *stack;
     size_t              stack_size;
     int                 spawned_lthreads;
@@ -155,11 +158,11 @@ struct lthread_sched {
     struct lthread      *current_lthread;
     int                 page_size;
     /* poller variables */
-    int                 poller_fd;
+    int                 poller_fd; // IO监听句柄
 #if defined(__FreeBSD__) || defined(__APPLE__)
     struct kevent       changelist[LT_MAX_EVENTS];
 #endif
-    int                 eventfd;
+    int                 eventfd; // 事件通知fd
     POLL_EVENT_TYPE     eventlist[LT_MAX_EVENTS];
     int                 nevents;
     int                 num_new_events;

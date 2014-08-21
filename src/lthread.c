@@ -55,7 +55,7 @@ static pthread_once_t key_once = PTHREAD_ONCE_INIT;
 
 
 
-// 交换执行上下文
+// 交换CPU执行上下文
 
 int _switch(struct cpu_ctx *new_ctx, struct cpu_ctx *cur_ctx);
 #ifdef __i386__
@@ -129,6 +129,7 @@ _exec(void *lt)
     _lthread_yield(lt);
 }
 
+// 切换CPU执行上下文, 让出CPU
 void
 _lthread_yield(struct lthread *lt)
 {
@@ -143,13 +144,14 @@ _lthread_free(struct lthread *lt)
     free(lt);
 }
 
+// 恢复lt协程
 int
 _lthread_resume(struct lthread *lt)
 {
 
-    struct lthread_sched *sched = lthread_get_sched();
+    struct lthread_sched *sched = lthread_get_sched(); // 调度器
 
-    if (lt->state & BIT(LT_ST_CANCELLED)) {
+    if (lt->state & BIT(LT_ST_CANCELLED)) { // 此协程被取消了
         /* if an lthread was joining on it, schedule it to run */
         if (lt->lt_join) {
             _lthread_desched_sleep(lt->lt_join);
@@ -164,15 +166,15 @@ _lthread_resume(struct lthread *lt)
         return (-1);
     }
 
-    if (lt->state & BIT(LT_ST_NEW))
+    if (lt->state & BIT(LT_ST_NEW)) // 如果是刚新建的协程, 初始化
         _lthread_init(lt);
 
-    sched->current_lthread = lt;
-    _switch(&lt->ctx, &lt->sched->ctx);
-    sched->current_lthread = NULL;
+    sched->current_lthread = lt;        // 设置当前运行的协程
+    _switch(&lt->ctx, &lt->sched->ctx); // 切换运行上下文, 把lt设置为当前执行的上下文
+    sched->current_lthread = NULL;      // 回到主协程的执行上下文, 清空当前运行的上下文
     _lthread_madvise(lt);
 
-    if (lt->state & BIT(LT_ST_EXITED)) {
+    if (lt->state & BIT(LT_ST_EXITED)) { // 此协程已经退出
         if (lt->lt_join) {
             /* if lthread was sleeping, deschedule it so it doesn't expire. */
             _lthread_desched_sleep(lt->lt_join);
@@ -238,16 +240,17 @@ lthread_init(size_t size)
     return (sched_create(size));
 }
 
+// 初始化协程
 static void
 _lthread_init(struct lthread *lt)
 {
     void **stack = NULL;
-    stack = (void **)(lt->stack + (lt->stack_size));
+    stack = (void **)(lt->stack + (lt->stack_size)); // 指向栈的末尾
 
     stack[-3] = NULL;
-    stack[-2] = (void *)lt;
-    lt->ctx.esp = (void *)stack - (4 * sizeof(void *));
-    lt->ctx.ebp = (void *)stack - (3 * sizeof(void *));
+    stack[-2] = (void *)lt; // _exec()的参数
+    lt->ctx.esp = (void *)stack - (4 * sizeof(void *)); // 栈的指针
+    lt->ctx.ebp = (void *)stack - (3 * sizeof(void *)); // 栈的基地址
     lt->ctx.eip = (void *)_exec;
     lt->state = BIT(LT_ST_READY);
 }
@@ -293,6 +296,7 @@ sched_create(size_t stack_size)
         return (errno);
     }
 
+    // 为调度器创建IO事件通知管道
     _lthread_poller_ev_register_trigger();
 
     // 初始化调度锁
@@ -310,24 +314,30 @@ sched_create(size_t stack_size)
     RB_INIT(&new_sched->sleeping);
     RB_INIT(&new_sched->waiting);
     new_sched->birth = _lthread_usec_now(); // 调度器创建时间
+    // 初始化一些队列
     TAILQ_INIT(&new_sched->ready);
     TAILQ_INIT(&new_sched->defer);
     LIST_INIT(&new_sched->busy);
 
+    // 清空CPU执行上下文
     bzero(&new_sched->ctx, sizeof(struct cpu_ctx));
 
     return (0);
 }
 
+// 创建一个新的协程
+// 通过new_lt返回给用户
+// fun是要执行的函数
+// arg是函数的参数
 int
 lthread_create(struct lthread **new_lt, void *fun, void *arg)
 {
     struct lthread *lt = NULL;
     assert(pthread_once(&key_once, _lthread_key_create) == 0);
-    struct lthread_sched *sched = lthread_get_sched();
+    struct lthread_sched *sched = lthread_get_sched(); // 获取调度器
 
-    if (sched == NULL) {
-        sched_create(0);
+    if (sched == NULL) { // 如果调度器为空, 那么就创建一个新的
+        sched_create(0); // 创建新的调度器
         sched = lthread_get_sched();
         if (sched == NULL) {
             perror("Failed to create scheduler");
@@ -335,27 +345,30 @@ lthread_create(struct lthread **new_lt, void *fun, void *arg)
         }
     }
 
+    // 创建一个协程对象
     if ((lt = calloc(1, sizeof(struct lthread))) == NULL) {
         perror("Failed to allocate memory for new lthread");
         return (errno);
     }
 
+    // 创建协程的栈空间
     if (posix_memalign(&lt->stack, getpagesize(), sched->stack_size)) {
         free(lt);
         perror("Failed to allocate stack for new lthread");
         return (errno);
     }
 
-    lt->sched = sched;
+    lt->sched = sched; // 设置调度器
     lt->stack_size = sched->stack_size;
-    lt->state = BIT(LT_ST_NEW);
-    lt->id = sched->spawned_lthreads++;
+    lt->state = BIT(LT_ST_NEW); // 设置协程的当前状态
+    lt->id = sched->spawned_lthreads++; // 协程的ID
     lt->fun = fun;
     lt->fd_wait = -1;
     lt->arg = arg;
     lt->birth = _lthread_usec_now();
     *new_lt = lt;
-    TAILQ_INSERT_TAIL(&lt->sched->ready, lt, ready_next);
+
+    TAILQ_INSERT_TAIL(&lt->sched->ready, lt, ready_next); // 把当前协程对象添加到调度器的准备队列中
 
     return (0);
 }

@@ -109,7 +109,7 @@ _lthread_io_worker(void *arg)
 
             /* resume it back on the  prev scheduler */
             assert(pthread_mutex_lock(&lt->sched->defer_mutex) == 0);
-            TAILQ_INSERT_TAIL(&lt->sched->defer, lt, defer_next); // 把任务对象添加到重用队列中
+            TAILQ_INSERT_TAIL(&lt->sched->defer, lt, defer_next); // 把任务对象添加到延时处理队列中
             assert(pthread_mutex_unlock(&lt->sched->defer_mutex) == 0);
 
             /* signal the prev scheduler in case it was sleeping in a poll */
@@ -143,7 +143,7 @@ _lthread_io_add(struct lthread *lt)
     assert(pthread_cond_signal(&io_worker->run_mutex_cond) == 0);
     assert(pthread_mutex_unlock(&io_worker->run_mutex) == 0);
 
-    _lthread_yield(lt);
+    _lthread_yield(lt); // 让出CPU
 
     /* restore errno we got from io worker, if any */
     if (lt->io.ret == -1)
@@ -160,8 +160,9 @@ lthread_io_read(int fd, void *buf, size_t nbytes)
     lt->io.fd = fd;
     lt->io.nbytes = nbytes;
 
-    _lthread_io_add(lt);
-    lt->state &= CLEARBIT(LT_ST_WAIT_IO_READ);
+    _lthread_io_add(lt); // 这里会让出CPU
+
+    lt->state &= CLEARBIT(LT_ST_WAIT_IO_READ); // 这里是恢复运行, 去掉读IO标志
 
     return (lt->io.ret);
 }

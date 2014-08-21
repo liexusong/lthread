@@ -46,8 +46,8 @@ int
 main(void)
 {
     lthread_t *lt;
-    lthread_create(&lt, udp_server, NULL);
-    lthread_run();
+    lthread_create(&lt, udp_server, NULL); // 创建一个新的协程
+    lthread_run(); // 开始运行
 
     return 0;
  }
