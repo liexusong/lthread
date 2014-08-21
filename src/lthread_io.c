@@ -48,6 +48,7 @@ struct lthread_io_worker {
 
 static struct lthread_io_worker io_workers[IO_WORKERS];
 
+// 创建IO工作线程
 static void
 once_routine(void)
 {
@@ -87,20 +88,20 @@ _lthread_io_worker(void *arg)
             assert(pthread_mutex_lock(&io_worker->lthreads_mutex) == 0);
 
             /* we have no work to do, break and wait */
-            if (TAILQ_EMPTY(&io_worker->lthreads)) {
+            if (TAILQ_EMPTY(&io_worker->lthreads)) { // IO任务队列为空
                 assert(pthread_mutex_unlock(&io_worker->lthreads_mutex) == 0);
                 break;
             }
 
-            lt = TAILQ_FIRST(&io_worker->lthreads);
-            TAILQ_REMOVE(&io_worker->lthreads, lt, io_next);
+            lt = TAILQ_FIRST(&io_worker->lthreads); // 取得一个IO任务
+            TAILQ_REMOVE(&io_worker->lthreads, lt, io_next); // 把IO任务从队列中删除
 
             assert(pthread_mutex_unlock(&io_worker->lthreads_mutex) == 0);
 
-            if (lt->state & BIT(LT_ST_WAIT_IO_READ)) {
+            if (lt->state & BIT(LT_ST_WAIT_IO_READ)) { // 读操作
                 lt->io.ret = read(lt->io.fd, lt->io.buf, lt->io.nbytes);
                 lt->io.err = (lt->io.ret == -1) ? errno : 0;
-            } else if (lt->state & BIT(LT_ST_WAIT_IO_WRITE)) {
+            } else if (lt->state & BIT(LT_ST_WAIT_IO_WRITE)) { // 写操作
                 lt->io.ret = write(lt->io.fd, lt->io.buf, lt->io.nbytes);
                 lt->io.err = (lt->io.ret == -1) ? errno : 0;
             } else
@@ -108,7 +109,7 @@ _lthread_io_worker(void *arg)
 
             /* resume it back on the  prev scheduler */
             assert(pthread_mutex_lock(&lt->sched->defer_mutex) == 0);
-            TAILQ_INSERT_TAIL(&lt->sched->defer, lt, defer_next);
+            TAILQ_INSERT_TAIL(&lt->sched->defer, lt, defer_next); // 把任务对象添加到重用队列中
             assert(pthread_mutex_unlock(&lt->sched->defer_mutex) == 0);
 
             /* signal the prev scheduler in case it was sleeping in a poll */
@@ -117,7 +118,7 @@ _lthread_io_worker(void *arg)
 
         assert(pthread_mutex_lock(&io_worker->run_mutex) == 0);
         pthread_cond_wait(&io_worker->run_mutex_cond,
-            &io_worker->run_mutex);
+            &io_worker->run_mutex); // 等待有IO任务的到来
         assert(pthread_mutex_unlock(&io_worker->run_mutex) == 0);
 
     }

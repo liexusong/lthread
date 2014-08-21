@@ -81,6 +81,7 @@ __asm__ (
 "movl %eax, (%esp)                                  \n"
 "ret                                                \n"
 );
+
 #elif defined(__x86_64__)
 
 __asm__ (
@@ -268,6 +269,7 @@ sched_create(size_t stack_size)
     struct lthread_sched *new_sched;
     size_t sched_stack_size = 0;
 
+    // 栈大小
     sched_stack_size = stack_size ? stack_size : MAX_STACK_SIZE;
 
     if ((new_sched = calloc(1, sizeof(struct lthread_sched))) == NULL) {
@@ -275,16 +277,22 @@ sched_create(size_t stack_size)
         return (errno);
     }
 
+    // 把调度对象保存起来
     assert(pthread_setspecific(lthread_sched_key, new_sched) == 0);
+
+    // 初始化IO工作线程
     _lthread_io_worker_init();
 
+    // 初始化多路复用IO
     if ((new_sched->poller_fd = _lthread_poller_create()) == -1) {
         perror("Failed to initialize poller\n");
         _sched_free(new_sched);
         return (errno);
     }
+
     _lthread_poller_ev_register_trigger();
 
+    // 初始化调度锁
     if (pthread_mutex_init(&new_sched->defer_mutex, NULL) != 0) {
         perror("Failed to initialize defer_mutex\n");
         _sched_free(new_sched);
@@ -292,13 +300,13 @@ sched_create(size_t stack_size)
     }
 
     new_sched->stack_size = sched_stack_size;
-    new_sched->page_size = getpagesize();
+    new_sched->page_size = getpagesize(); // 获取内存页大小
 
     new_sched->spawned_lthreads = 0;
     new_sched->default_timeout = 3000000u;
     RB_INIT(&new_sched->sleeping);
     RB_INIT(&new_sched->waiting);
-    new_sched->birth = _lthread_usec_now();
+    new_sched->birth = _lthread_usec_now(); // 调度器创建时间
     TAILQ_INIT(&new_sched->ready);
     TAILQ_INIT(&new_sched->defer);
     LIST_INIT(&new_sched->busy);
