@@ -228,14 +228,14 @@ lthread_run(void)
                 errno = ECONNRESET;
 
             lt_read = _lthread_desched_event(fd, LT_EV_READ);
-            if (lt_read != NULL) {
+            if (lt_read != NULL) { // 可读
                 if (is_eof)
                     lt_read->state |= BIT(LT_ST_FDEOF);
                 _lthread_resume(lt_read);
             }
 
             lt_write = _lthread_desched_event(fd, LT_EV_WRITE);
-            if (lt_write != NULL) {
+            if (lt_write != NULL) { // 可写
                 if (is_eof)
                     lt_write->state |= BIT(LT_ST_FDEOF);
                 _lthread_resume(lt_write);
@@ -278,6 +278,7 @@ _lthread_cancel_event(struct lthread *lt)
  * It also deschedules the lthread from sleeping in case it was in sleeping
  * tree.
  */
+// 唤醒fd对应协程
 struct lthread *
 _lthread_desched_event(int fd, enum lthread_event e)
 {
@@ -315,20 +316,20 @@ _lthread_sched_event(struct lthread *lt, int fd, enum lthread_event e,
         assert(0);
     }
 
-    if (e == LT_EV_READ) {
+    if (e == LT_EV_READ) { // 监听读事件
         st = LT_ST_WAIT_READ;
         _lthread_poller_ev_register_rd(fd);
-    } else if (e == LT_EV_WRITE) {
+    } else if (e == LT_EV_WRITE) { // 监听写事件
         st = LT_ST_WAIT_WRITE;
         _lthread_poller_ev_register_wr(fd);
     } else
         assert(0);
 
     lt->state |= BIT(st);
-    lt->fd_wait = FD_KEY(fd, e);
+    lt->fd_wait = FD_KEY(fd, e); // 生成key
     lt_tmp = RB_INSERT(lthread_rb_wait, &lt->sched->waiting, lt);
     assert(lt_tmp == NULL);
-    _lthread_sched_sleep(lt, timeout);
+    _lthread_sched_sleep(lt, timeout); // 睡眠当前协程
     lt->fd_wait = -1;
     lt->state &= CLEARBIT(st);
 }
@@ -389,11 +390,11 @@ void
 _lthread_sched_busy_sleep(struct lthread *lt, uint64_t msecs)
 {
 
-    LIST_INSERT_HEAD(&lt->sched->busy, lt, busy_next);
+    LIST_INSERT_HEAD(&lt->sched->busy, lt, busy_next); // 插入到忙队列中
     lt->state |= BIT(LT_ST_BUSY);
-    _lthread_sched_sleep(lt, msecs);
+    _lthread_sched_sleep(lt, msecs); // 睡眠
     lt->state &= CLEARBIT(LT_ST_BUSY);
-    LIST_REMOVE(lt, busy_next);
+    LIST_REMOVE(lt, busy_next); // 从忙队列中删除
 }
 
 /*
@@ -418,6 +419,7 @@ _lthread_resume_expired(struct lthread_sched *sched)
             break;
 
         if (lt->sleep_usecs <= t_diff_usecs) { // 协程已经睡眠足够
+
             _lthread_cancel_event(lt);         // 取消IO事件
             _lthread_desched_sleep(lt);        // 把当前协程从睡眠队列中删除
             lt->state |= BIT(LT_ST_EXPIRED);   // 添加超时标志

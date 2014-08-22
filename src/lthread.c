@@ -134,6 +134,8 @@ void
 _lthread_yield(struct lthread *lt)
 {
     lt->ops = 0;
+
+    // 把子协程切换到主协程运行
     _switch(&lt->sched->ctx, &lt->ctx);
 }
 
@@ -397,9 +399,10 @@ lthread_cancel(struct lthread *lt)
     if (lt == NULL)
         return;
 
-    lt->state |= BIT(LT_ST_CANCELLED);
-    _lthread_desched_sleep(lt);
-    _lthread_cancel_event(lt);
+    lt->state |= BIT(LT_ST_CANCELLED); // 添加取消标志
+    _lthread_desched_sleep(lt);        // 把lt协程从睡眠树中删除
+    _lthread_cancel_event(lt);         // 取消所有等待的IO事件
+
     /*
      * we don't schedule the cancelled lthread if it was running in a compute
      * scheduler or pending to run in a compute scheduler or in an io worker.
@@ -412,6 +415,7 @@ lthread_cancel(struct lthread *lt)
         lt->state & BIT(LT_ST_WAIT_IO_WRITE) ||
         lt->state & BIT(LT_ST_RUNCOMPUTE))
         return;
+
     TAILQ_INSERT_TAIL(&lt->sched->ready, lt, ready_next);
 }
 
@@ -445,12 +449,15 @@ lthread_cond_wait(struct lthread_cond *c, uint64_t timeout)
 void
 lthread_cond_signal(struct lthread_cond *c)
 {
-    struct lthread *lt = TAILQ_FIRST(&c->blocked_lthreads);
-    if (lt == NULL)
-        return;
+    struct lthread *lt = TAILQ_FIRST(&c->blocked_lthreads); // 取得一个等待当前条件变量的协程
+
+    if (lt == NULL) return;
+
     TAILQ_REMOVE(&c->blocked_lthreads, lt, cond_next);
-    _lthread_desched_sleep(lt);
-    TAILQ_INSERT_TAIL(&lthread_get_sched()->ready, lt, ready_next);
+
+    _lthread_desched_sleep(lt); // 把lt协程从睡眠树中删除
+
+    TAILQ_INSERT_TAIL(&lthread_get_sched()->ready, lt, ready_next); // 添加到准备队列中
 }
 
 void
@@ -470,9 +477,11 @@ void
 lthread_sleep(uint64_t msecs)
 {
     struct lthread *lt = lthread_get_sched()->current_lthread;
-    _lthread_sched_sleep(lt, msecs);
+
+    _lthread_sched_sleep(lt, msecs); // 睡眠当前协程
 }
 
+// 此函数的作用是暂时让出CPU
 void
 _lthread_renice(struct lthread *lt)
 {
@@ -481,7 +490,8 @@ _lthread_renice(struct lthread *lt)
         return;
 
     TAILQ_INSERT_TAIL(&lthread_get_sched()->ready, lt, ready_next);
-    _lthread_yield(lt);
+
+    _lthread_yield(lt); // 暂时让出CPU
 }
 
 void
@@ -497,11 +507,14 @@ void
 lthread_exit(void *ptr)
 {
     struct lthread *lt = lthread_get_sched()->current_lthread;
+
+    // 如果当前协程有其他协程在等待join
     if (lt->lt_join && lt->lt_join->lt_exit_ptr && ptr)
         *(lt->lt_join->lt_exit_ptr) = ptr;
 
-    lt->state |= BIT(LT_ST_EXITED);
-    _lthread_yield(lt);
+    lt->state |= BIT(LT_ST_EXITED); // 添加exit标志
+
+    _lthread_yield(lt); // 让出CPU
 }
 
 int
@@ -516,9 +529,9 @@ lthread_join(struct lthread *lt, void **ptr, uint64_t timeout)
     if (lt->state & BIT(LT_ST_EXITED))
         return (-1);
 
-    _lthread_sched_busy_sleep(current, timeout);
+    _lthread_sched_busy_sleep(current, timeout); // 睡眠当前协程
 
-    if (current->state & BIT(LT_ST_EXPIRED)) {
+    if (current->state & BIT(LT_ST_EXPIRED)) { // 超时了
         lt->lt_join = NULL;
         return (-2);
     }
@@ -526,6 +539,7 @@ lthread_join(struct lthread *lt, void **ptr, uint64_t timeout)
     if (lt->state & BIT(LT_ST_CANCELLED))
         ret = -1;
 
+    // 回收lt
     _lthread_free(lt);
 
     return (ret);
@@ -535,6 +549,7 @@ void
 lthread_detach(void)
 {
     struct lthread *current = lthread_get_sched()->current_lthread;
+
     current->state |= BIT(LT_ST_DETACH);
 }
 
@@ -542,6 +557,7 @@ void
 lthread_set_funcname(const char *f)
 {
     struct lthread *lt = lthread_get_sched()->current_lthread;
+
     strncpy(lt->funcname, f, 64);
 }
 
