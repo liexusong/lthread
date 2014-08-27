@@ -113,7 +113,7 @@ _lthread_io_worker(void *arg)
             assert(pthread_mutex_unlock(&lt->sched->defer_mutex) == 0);
 
             /* signal the prev scheduler in case it was sleeping in a poll */
-            _lthread_poller_ev_trigger(lt->sched);
+            _lthread_poller_ev_trigger(lt->sched); // 通知调度器有IO事件已经完成
         }
 
         assert(pthread_mutex_lock(&io_worker->run_mutex) == 0);

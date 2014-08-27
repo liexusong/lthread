@@ -357,18 +357,24 @@ lthread_connect(int fd, struct sockaddr *name, socklen_t namelen,
 
     while (1) {
         _lthread_renice(lt);
+
         ret = connect(fd, name, namelen);
-        if (ret == 0)
-            break;
+
+        if (ret == 0) break;
+
+        // 此处说明fd暂时不能connect, 所以要把fd添加到epoll中进行监听, 并让出CPU
         if (ret == -1 && (errno == EAGAIN || 
             errno == EWOULDBLOCK ||
-            errno == EINPROGRESS)) {
-            _lthread_sched_event(lt, fd, LT_EV_WRITE, timeout);
-            if (lt->state & BIT(LT_ST_EXPIRED))
-                return (-2);
-            
-            ret = 0;
+            errno == EINPROGRESS))
+        {
+            _lthread_sched_event(lt, fd, LT_EV_WRITE, timeout); // 监听事件并让出CPU
+
+            if (lt->state & BIT(LT_ST_EXPIRED)) return (-2); // 超时
+
+            ret = 0; // 执行到这里代表已经连接成功
+
             break;
+
         } else {
             break;
         }
@@ -386,6 +392,7 @@ lthread_writev(int fd, struct iovec *iov, int iovcnt)
 
     do {
         _lthread_renice(lt);
+
         ssize_t n = writev(fd, iov + iov_index, iovcnt - iov_index);
         if (n > 0) {
             int i = 0;
