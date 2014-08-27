@@ -60,20 +60,20 @@ static pthread_once_t key_once = PTHREAD_ONCE_INIT;
 int _switch(struct cpu_ctx *new_ctx, struct cpu_ctx *cur_ctx);
 #ifdef __i386__
 __asm__ (
-"    .text                                  \n"
-"    .p2align 2,,3                          \n"
-".globl _switch                             \n"
-"_switch:                                   \n"
-"__switch:                                  \n"
-"movl 8(%esp), %edx      # fs->%edx         \n"
-"movl %esp, 0(%edx)      # save esp         \n"
-"movl %ebp, 4(%edx)      # save ebp         \n"
-"movl (%esp), %eax       # save eip         \n"
-"movl %eax, 8(%edx)                         \n"
-"movl %ebx, 12(%edx)     # save ebx,esi,edi \n"
-"movl %esi, 16(%edx)                        \n"
-"movl %edi, 20(%edx)                        \n"
-"movl 4(%esp), %edx      # ts->%edx         \n"
+"    .text                                          \n"
+"    .p2align 2,,3                                  \n"
+".globl _switch                                     \n"
+"_switch:                                           \n"
+"__switch:                                          \n"
+"movl 8(%esp), %edx      # fs->%edx                 \n"
+"movl %esp, 0(%edx)      # save esp                 \n"
+"movl %ebp, 4(%edx)      # save ebp                 \n"
+"movl (%esp), %eax       # save eip                 \n"   /* switch()调用的下条指令 */
+"movl %eax, 8(%edx)                                 \n"
+"movl %ebx, 12(%edx)     # save ebx,esi,edi         \n"
+"movl %esi, 16(%edx)                                \n"
+"movl %edi, 20(%edx)                                \n"
+"movl 4(%esp), %edx      # ts->%edx                 \n"
 "movl 20(%edx), %edi     # restore ebx,esi,edi      \n"
 "movl 16(%edx), %esi                                \n"
 "movl 12(%edx), %ebx                                \n"
@@ -87,7 +87,7 @@ __asm__ (
 #elif defined(__x86_64__)
 
 __asm__ (
-"    .text                                  \n"
+"    .text                                               \n"
 "       .p2align 4,,15                                   \n"
 ".globl _switch                                          \n"
 ".globl __switch                                         \n"
