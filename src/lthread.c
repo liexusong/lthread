@@ -155,9 +155,9 @@ _lthread_resume(struct lthread *lt)
 
     if (lt->state & BIT(LT_ST_CANCELLED)) { // 此协程被取消了
         /* if an lthread was joining on it, schedule it to run */
-        if (lt->lt_join) {
-            _lthread_desched_sleep(lt->lt_join);
-            TAILQ_INSERT_TAIL(&sched->ready, lt->lt_join, ready_next);
+        if (lt->lt_join) { // 如果有其他协程在等待当前协程退出
+            _lthread_desched_sleep(lt->lt_join); // 唤醒协程
+            TAILQ_INSERT_TAIL(&sched->ready, lt->lt_join, ready_next); // 把协程放到准备队列中
             lt->lt_join = NULL;
         }
         /* if lthread is detached, then we can free it up */
@@ -172,22 +172,27 @@ _lthread_resume(struct lthread *lt)
         _lthread_init(lt);
 
     sched->current_lthread = lt;        // 设置当前运行的协程
+
+    // *=== 最重要的调用 ===* //
     _switch(&lt->ctx, &lt->sched->ctx); // 切换运行上下文, 把lt设置为当前执行的上下文
+
     sched->current_lthread = NULL;      // 回到主协程的执行上下文, 清空当前运行的上下文
     _lthread_madvise(lt);
 
-    if (lt->state & BIT(LT_ST_EXITED)) { // 此协程已经退出
+    if (lt->state & BIT(LT_ST_EXITED)) { // 如果上次被执行的协程已经退出
         if (lt->lt_join) {
             /* if lthread was sleeping, deschedule it so it doesn't expire. */
-            _lthread_desched_sleep(lt->lt_join);
-            TAILQ_INSERT_TAIL(&sched->ready, lt->lt_join, ready_next);
+            _lthread_desched_sleep(lt->lt_join); // 把调用lthread_join(lt)的协程从睡眠队列中删除
+            TAILQ_INSERT_TAIL(&sched->ready, lt->lt_join, ready_next); // 把调用lthread_join(lt)的协程添加到准备队列中
             lt->lt_join = NULL;
         }
 
         /* if lthread is detached, free it, otherwise lthread_join() will */
         if (lt->state & BIT(LT_ST_DETACH))
             _lthread_free(lt);
+
         return (-1);
+
     } else {
         /* place it in a compute scheduler if needed. */
         if (lt->state & BIT(LT_ST_PENDING_RUNCOMPUTE)) {
@@ -247,13 +252,14 @@ static void
 _lthread_init(struct lthread *lt)
 {
     void **stack = NULL;
+
     stack = (void **)(lt->stack + (lt->stack_size)); // 指向栈的末尾
 
     stack[-3] = NULL;
     stack[-2] = (void *)lt; // _exec()的参数
     lt->ctx.esp = (void *)stack - (4 * sizeof(void *)); // 栈的指针
     lt->ctx.ebp = (void *)stack - (3 * sizeof(void *)); // 栈的基地址
-    lt->ctx.eip = (void *)_exec;
+    lt->ctx.eip = (void *)_exec;                        // 要执行的函数
     lt->state = BIT(LT_ST_READY);
 }
 
@@ -285,7 +291,7 @@ sched_create(size_t stack_size)
         return (errno);
     }
 
-    // 把调度对象保存起来
+    // 把调度对象保存起来(每个线程都是独立的)
     assert(pthread_setspecific(lthread_sched_key, new_sched) == 0);
 
     // 初始化IO工作线程
@@ -434,11 +440,12 @@ int
 lthread_cond_wait(struct lthread_cond *c, uint64_t timeout)
 {
     struct lthread *lt = lthread_get_sched()->current_lthread;
-    TAILQ_INSERT_TAIL(&c->blocked_lthreads, lt, cond_next);
 
-    _lthread_sched_busy_sleep(lt, timeout);
+    TAILQ_INSERT_TAIL(&c->blocked_lthreads, lt, cond_next); // 等待当前条件信号的队列
 
-    if (lt->state & BIT(LT_ST_EXPIRED)) {
+    _lthread_sched_busy_sleep(lt, timeout); // 睡眠当前协程
+
+    if (lt->state & BIT(LT_ST_EXPIRED)) { // 如果超时了
         TAILQ_REMOVE(&c->blocked_lthreads, lt, cond_next);
         return (-2);
     }

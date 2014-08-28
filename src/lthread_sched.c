@@ -77,6 +77,7 @@ static inline int _lthread_sched_isdone(struct lthread_sched *sched);
 
 static struct lthread find_lt;
 
+// 监听事件是否可用
 static int
 _lthread_poll(void)
 {
@@ -152,7 +153,7 @@ _lthread_sched_isdone(struct lthread_sched *sched)
     // 判断是否没有协程在运行:
 	// =======================
 	// 1) 没有等待的协程
-	// 2) 没有运行中的协程
+	// 2) 没有繁忙的协程
 	// 3) 没有睡眠的协程
 	// 4) 没有准备的协程
 
@@ -162,6 +163,9 @@ _lthread_sched_isdone(struct lthread_sched *sched)
         TAILQ_EMPTY(&sched->ready));
 }
 
+/*
+ * 调度器主循环
+ */
 void
 lthread_run(void)
 {
@@ -177,7 +181,7 @@ lthread_run(void)
     if (sched == NULL)
         return;
 
-    while (!_lthread_sched_isdone(sched)) {
+    while (!_lthread_sched_isdone(sched)) { // 如果没有协程, 那么直接退出
 
         /* 1. start by checking if a sleeping thread needs to wakeup */
         _lthread_resume_expired(sched); // 唤醒已经超时的协程
@@ -218,7 +222,7 @@ lthread_run(void)
              * We got signaled via trigger to wakeup from polling & rusume file io.
              * Those lthreads will get handled in step 4.
              */
-            if (fd == sched->eventfd) {
+            if (fd == sched->eventfd) { // 如果是通知fd, 那么不用处理这个
                 _lthread_poller_ev_clear_trigger();
                 continue;
             }
@@ -256,12 +260,14 @@ lthread_run(void)
  * rbtree. This is safe to be called even if the lthread wasn't waiting on an
  * event.
  */
+// 清除协程的事件监听
 void
 _lthread_cancel_event(struct lthread *lt)
 {
     if (lt->state & BIT(LT_ST_WAIT_READ)) {
         _lthread_poller_ev_clear_rd(FD_ONLY(lt->fd_wait));
         lt->state &= CLEARBIT(LT_ST_WAIT_READ);
+
     } else if (lt->state & BIT(LT_ST_WAIT_WRITE)) {
         _lthread_poller_ev_clear_wr(FD_ONLY(lt->fd_wait));
         lt->state &= CLEARBIT(LT_ST_WAIT_WRITE);
@@ -288,8 +294,8 @@ _lthread_desched_event(int fd, enum lthread_event e)
 
     lt = RB_FIND(lthread_rb_wait, &sched->waiting, &find_lt);
     if (lt != NULL) {
-        RB_REMOVE(lthread_rb_wait, &lt->sched->waiting, lt);
-        _lthread_desched_sleep(lt);
+        RB_REMOVE(lthread_rb_wait, &lt->sched->waiting, lt); // 从红黑树中删除
+        _lthread_desched_sleep(lt);                          // 从sleep队列中删除
     }
 
     return (lt);
@@ -316,20 +322,29 @@ _lthread_sched_event(struct lthread *lt, int fd, enum lthread_event e,
         assert(0);
     }
 
-    if (e == LT_EV_READ) { // 监听读事件
+    if (e == LT_EV_READ) {          // 监听读事件
         st = LT_ST_WAIT_READ;
-        _lthread_poller_ev_register_rd(fd);
-    } else if (e == LT_EV_WRITE) { // 监听写事件
+        _lthread_poller_ev_register_rd(fd); // 注册读事件
+
+    } else if (e == LT_EV_WRITE) {  // 监听写事件
         st = LT_ST_WAIT_WRITE;
-        _lthread_poller_ev_register_wr(fd);
-    } else
+        _lthread_poller_ev_register_wr(fd); // 注册写事件
+
+    } else {
         assert(0);
+    }
 
     lt->state |= BIT(st);
     lt->fd_wait = FD_KEY(fd, e); // 生成key
-    lt_tmp = RB_INSERT(lthread_rb_wait, &lt->sched->waiting, lt);
+
+    lt_tmp = RB_INSERT(lthread_rb_wait, &lt->sched->waiting, lt); // 插入到等待红黑树中 (这样协程上下文才不会丢失, 当fd可读写的时候会被唤醒)
+
     assert(lt_tmp == NULL);
+
     _lthread_sched_sleep(lt, timeout); // 睡眠当前协程
+
+    // 这里会被唤醒
+
     lt->fd_wait = -1;
     lt->state &= CLEARBIT(st);
 }

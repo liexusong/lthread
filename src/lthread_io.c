@@ -132,7 +132,7 @@ _lthread_io_add(struct lthread *lt)
     struct lthread_io_worker *io_worker = &io_workers[io_selector++];
     io_selector = io_selector % IO_WORKERS;
 
-    LIST_INSERT_HEAD(&lt->sched->busy, lt, busy_next);
+    LIST_INSERT_HEAD(&lt->sched->busy, lt, busy_next); // 添加到忙队列中, 这是告诉调度器还要协程需要处理, 不能exit()进程
 
     assert(pthread_mutex_lock(&io_worker->lthreads_mutex) == 0);
     TAILQ_INSERT_TAIL(&io_worker->lthreads, lt, io_next);
@@ -176,7 +176,8 @@ lthread_io_write(int fd, void *buf, size_t nbytes)
     lt->io.nbytes = nbytes;
     lt->io.fd = fd;
 
-    _lthread_io_add(lt);
+    _lthread_io_add(lt); // 这里会让出CPU
+
     lt->state &= CLEARBIT(LT_ST_WAIT_IO_WRITE);
 
     return (lt->io.ret);
