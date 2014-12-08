@@ -57,7 +57,7 @@ TAILQ_HEAD(lthread_q, lthread);
 
 typedef void (*lthread_func)(void *);
 
-// CPU执行上下文
+/* CPU执行上下文 */
 struct cpu_ctx {
     void     *esp;
     void     *ebp;
@@ -82,7 +82,7 @@ enum lthread_compute_st {
     LT_COMPUTE_FREE,
 };
 
-// 协程的状态值
+/* 协程的状态值 */
 enum lthread_st {
     LT_ST_WAIT_READ,    /* lthread waiting for READ on socket */
     LT_ST_WAIT_WRITE,   /* lthread waiting for WRITE on socket */
@@ -101,7 +101,7 @@ enum lthread_st {
     LT_ST_WAIT_IO_WRITE /* lthread waiting for WRITE IO to finish */
 };
 
-// 协程结构对象
+/* 协程结构对象 */
 struct lthread {
     struct cpu_ctx          ctx;            /* cpu ctx info */
     lthread_func            fun;            /* func lthread is running */
@@ -135,7 +135,7 @@ struct lthread {
         int fd;
         int ret;
         int err;
-    } io;
+    } io; /* I/O任务的信息 */
     /* lthread_compute schduler - when running in compute block */
     struct lthread_compute_sched    *compute_sched;
 };
@@ -148,9 +148,12 @@ struct lthread_cond {
     struct lthread_q blocked_lthreads;
 };
 
+/*
+ * lthread的调度器
+ */
 struct lthread_sched {
     uint64_t            birth;
-    struct cpu_ctx      ctx;   // 主协程CPU执行上下文
+    struct cpu_ctx      ctx;   /* 调度器的CPU执行上下文 */
     void                *stack;
     size_t              stack_size;
     int                 spawned_lthreads;

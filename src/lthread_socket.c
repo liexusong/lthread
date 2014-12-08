@@ -47,93 +47,93 @@
     #define FLAG | MSG_NOSIGNAL
 #endif
 
-#define LTHREAD_RECV(x, y)                                  \
-x {                                                         \
-    ssize_t ret = 0;                                        \
+#define LTHREAD_RECV(x, y)                                       \
+x {                                                              \
+    ssize_t ret = 0;                                             \
     struct lthread *lt = lthread_get_sched()->current_lthread;   \
-    while (1) {                                             \
-        if (lt->state & BIT(LT_ST_FDEOF))                   \
-            return (-1);                                    \
-        _lthread_renice(lt);                                \
-        ret = y;                                            \
-        if (ret == -1 && errno != EAGAIN)                   \
-            return (-1);                                    \
-        if ((ret == -1 && errno == EAGAIN)) {               \
-            _lthread_sched_event(lt, fd, LT_EV_READ, timeout);  \
-            if (lt->state & BIT(LT_ST_EXPIRED))             \
-                return (-2);                                \
-        }                                                   \
-        if (ret >= 0)                                       \
-            return (ret);                                   \
-    }                                                       \
-}                                                           \
+    while (1) {                                                  \
+        if (lt->state & BIT(LT_ST_FDEOF))                        \
+            return (-1);                                         \
+        _lthread_renice(lt);                                     \
+        ret = y;                                                 \
+        if (ret == -1 && errno != EAGAIN)                        \
+            return (-1);                                         \
+        if ((ret == -1 && errno == EAGAIN)) {                    \
+            _lthread_sched_event(lt, fd, LT_EV_READ, timeout);   \
+            if (lt->state & BIT(LT_ST_EXPIRED))                  \
+                return (-2);                                     \
+        }                                                        \
+        if (ret >= 0)                                            \
+            return (ret);                                        \
+    }                                                            \
+}                                                                \
 
-#define LTHREAD_RECV_EXACT(x, y)                            \
-x {                                                         \
-    ssize_t ret = 0;                                        \
-    ssize_t recvd = 0;                                      \
+#define LTHREAD_RECV_EXACT(x, y)                                 \
+x {                                                              \
+    ssize_t ret = 0;                                             \
+    ssize_t recvd = 0;                                           \
     struct lthread *lt = lthread_get_sched()->current_lthread;   \
-                                                            \
-    while (recvd != length) {                               \
-        if (lt->state & BIT(LT_ST_FDEOF))                   \
-            return (-1);                                    \
-                                                            \
-        _lthread_renice(lt);                                \
-        ret = y;                                            \
-        if (ret == 0)                                       \
-            return (recvd);                                 \
-        if (ret > 0)                                        \
-            recvd += ret;                                   \
-        if (ret == -1 && errno != EAGAIN)                   \
-            return (-1);                                    \
-        if ((ret == -1 && errno == EAGAIN)) {               \
-            _lthread_sched_event(lt, fd, LT_EV_READ, timeout); \
-            if (lt->state & BIT(LT_ST_EXPIRED))             \
-                return (-2);                                \
-        }                                                   \
-    }                                                       \
-    return (recvd);                                         \
-}                                                           \
+                                                                 \
+    while (recvd != length) {                                    \
+        if (lt->state & BIT(LT_ST_FDEOF))                        \
+            return (-1);                                         \
+                                                                 \
+        _lthread_renice(lt);                                     \
+        ret = y;                                                 \
+        if (ret == 0)                                            \
+            return (recvd);                                      \
+        if (ret > 0)                                             \
+            recvd += ret;                                        \
+        if (ret == -1 && errno != EAGAIN)                        \
+            return (-1);                                         \
+        if ((ret == -1 && errno == EAGAIN)) {                    \
+            _lthread_sched_event(lt, fd, LT_EV_READ, timeout);   \
+            if (lt->state & BIT(LT_ST_EXPIRED))                  \
+                return (-2);                                     \
+        }                                                        \
+    }                                                            \
+    return (recvd);                                              \
+}                                                                \
 
 
-#define LTHREAD_SEND(x, y)                                  \
-x {                                                         \
-    ssize_t ret = 0;                                        \
-    ssize_t sent = 0;                                       \
+#define LTHREAD_SEND(x, y)                                       \
+x {                                                              \
+    ssize_t ret = 0;                                             \
+    ssize_t sent = 0;                                            \
     struct lthread *lt = lthread_get_sched()->current_lthread;   \
-    while (sent != length) {                                \
-        if (lt->state & BIT(LT_ST_FDEOF))                   \
-            return (-1);                                    \
-        _lthread_renice(lt);                                \
-        ret = y;                                            \
-        if (ret == 0)                                       \
-            return (sent);                                  \
-        if (ret > 0)                                        \
-            sent += ret;                                    \
-        if (ret == -1 && errno != EAGAIN)                   \
-            return (-1);                                    \
-        if (ret == -1 && errno == EAGAIN)                   \
-            _lthread_sched_event(lt, fd, LT_EV_WRITE, 0);   \
-    }                                                       \
-    return (sent);                                          \
-}                                                           \
+    while (sent != length) {                                     \
+        if (lt->state & BIT(LT_ST_FDEOF))                        \
+            return (-1);                                         \
+        _lthread_renice(lt);                                     \
+        ret = y;                                                 \
+        if (ret == 0)                                            \
+            return (sent);                                       \
+        if (ret > 0)                                             \
+            sent += ret;                                         \
+        if (ret == -1 && errno != EAGAIN)                        \
+            return (-1);                                         \
+        if (ret == -1 && errno == EAGAIN)                        \
+            _lthread_sched_event(lt, fd, LT_EV_WRITE, 0);        \
+    }                                                            \
+    return (sent);                                               \
+}                                                                \
 
-#define LTHREAD_SEND_ONCE(x, y)                             \
-x {                                                         \
-    ssize_t ret = 0;                                        \
+#define LTHREAD_SEND_ONCE(x, y)                                  \
+x {                                                              \
+    ssize_t ret = 0;                                             \
     struct lthread *lt = lthread_get_sched()->current_lthread;   \
-    while (1) {                                             \
-        if (lt->state & BIT(LT_ST_FDEOF))                   \
-            return (-1);                                    \
-        ret = y;                                            \
-        if (ret >= 0)                                       \
-            return (ret);                                   \
-        if (ret == -1 && errno != EAGAIN)                   \
-            return (-1);                                    \
-        if (ret == -1 && errno == EAGAIN)                   \
-            _lthread_sched_event(lt, fd, LT_EV_WRITE, 0);   \
-    }                                                       \
-}                                                           \
+    while (1) {                                                  \
+        if (lt->state & BIT(LT_ST_FDEOF))                        \
+            return (-1);                                         \
+        ret = y;                                                 \
+        if (ret >= 0)                                            \
+            return (ret);                                        \
+        if (ret == -1 && errno != EAGAIN)                        \
+            return (-1);                                         \
+        if (ret == -1 && errno == EAGAIN)                        \
+            _lthread_sched_event(lt, fd, LT_EV_WRITE, 0);        \
+    }                                                            \
+}                                                                \
 
 const struct linger nolinger = { .l_onoff = 1, .l_linger = 1 };
 
@@ -358,20 +358,20 @@ lthread_connect(int fd, struct sockaddr *name, socklen_t namelen,
     while (1) {
         _lthread_renice(lt);
 
-        ret = connect(fd, name, namelen);
+        ret = connect(fd, name, namelen); /* 因为fd已经设置为non-blocking, 所以会立刻返回 */
 
         if (ret == 0) break;
 
-        // 此处说明fd暂时不能connect, 所以要把fd添加到epoll中进行监听, 并让出CPU
+        /* 此处说明fd暂时不能connect, 所以要把fd添加到epoll中进行监听, 并让出CPU */
         if (ret == -1 && (errno == EAGAIN || 
             errno == EWOULDBLOCK ||
             errno == EINPROGRESS))
         {
-            _lthread_sched_event(lt, fd, LT_EV_WRITE, timeout); // 监听事件并让出CPU
+            _lthread_sched_event(lt, fd, LT_EV_WRITE, timeout); /* 监听事件并让出CPU */
 
-            if (lt->state & BIT(LT_ST_EXPIRED)) return (-2); // 超时
+            if (lt->state & BIT(LT_ST_EXPIRED)) return (-2);  /* 超时 */
 
-            ret = 0; // 执行到这里代表已经连接成功
+            ret = 0; /* 执行到这里代表已经连接成功 */
 
             break;
 

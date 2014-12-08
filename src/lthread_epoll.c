@@ -133,7 +133,9 @@ _lthread_poller_ev_is_read(struct epoll_event *ev)
     return (ev->events & EPOLLIN);
 }
 
-// 为调度器创建事件通知管道
+/*
+ * 为调度器创建事件通知管道
+ */
 inline void
 _lthread_poller_ev_register_trigger(void)
 {
@@ -141,7 +143,7 @@ _lthread_poller_ev_register_trigger(void)
     int ret = 0;
     struct epoll_event ev;
 
-    if (!sched->eventfd) { // 用于进程间通知的fd
+    if (!sched->eventfd) { /* 用于进程间通知的fd */
         sched->eventfd = eventfd(0, EFD_NONBLOCK);
         assert(sched->eventfd != -1);
     }
@@ -151,6 +153,9 @@ _lthread_poller_ev_register_trigger(void)
     assert(ret != -1);
 }
 
+/*
+ * 读取通知信号
+ */
 inline void
 _lthread_poller_ev_clear_trigger(void)
 {
@@ -159,6 +164,9 @@ _lthread_poller_ev_clear_trigger(void)
     assert(read(sched->eventfd, &tmp, sizeof(uint64_t)) == sizeof(uint64_t));
 }
 
+/*
+ * 发送通知信号
+ */
 inline void
 _lthread_poller_ev_trigger(struct lthread_sched *sched)
 {
