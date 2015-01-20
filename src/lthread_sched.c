@@ -77,6 +77,9 @@ static inline int _lthread_sched_isdone(struct lthread_sched *sched);
 
 static struct lthread find_lt;
 
+/*
+ * 监听事件是否可用
+ */
 static int
 _lthread_poll(void)
 {
@@ -87,7 +90,7 @@ _lthread_poll(void)
     uint64_t usecs = 0;
 
     sched->num_new_events = 0;
-    usecs = _lthread_min_timeout(sched); // 最早超时的睡眠协程
+    usecs = _lthread_min_timeout(sched); /* 最早超时的睡眠协程 */
 
     /* never sleep if we have an lthread pending in the new queue */
     if (usecs && TAILQ_EMPTY(&sched->ready)) {
@@ -103,7 +106,7 @@ _lthread_poll(void)
 
 
     while (1) {
-        ret = _lthread_poller_poll(t); // 监听IO是否可读写
+        ret = _lthread_poller_poll(t); /* 监听IO是否可读写(epoll_wait) */
         if (ret == -1 && errno == EINTR) {
             continue;
         } else if (ret == -1) {
@@ -114,12 +117,14 @@ _lthread_poll(void)
     }
 
     sched->nevents = 0;
-    sched->num_new_events = ret; // 可读写的fd数量
+    sched->num_new_events = ret; /* 可读写的fd数量 */
 
     return (0);
 }
 
-// 找到最早超时的睡眠协程
+/*
+ * 找到最早超时的睡眠协程
+ */
 static uint64_t
 _lthread_min_timeout(struct lthread_sched *sched)
 {
@@ -149,12 +154,14 @@ _lthread_min_timeout(struct lthread_sched *sched)
 static inline int
 _lthread_sched_isdone(struct lthread_sched *sched)
 {
-    // 判断是否没有协程在运行:
-	// =======================
-	// 1) 没有等待的协程
-	// 2) 没有运行中的协程
-	// 3) 没有睡眠的协程
-	// 4) 没有准备的协程
+    /*
+	 * 判断是否没有协程在运行:
+	 * =======================
+	 * 1) 没有等待的协程
+	 * 2) 没有繁忙的协程
+	 * 3) 没有睡眠的协程
+	 * 4) 没有准备的协程
+	 */
 
     return (RB_EMPTY(&sched->waiting) &&
         LIST_EMPTY(&sched->busy) &&
@@ -162,6 +169,9 @@ _lthread_sched_isdone(struct lthread_sched *sched)
         TAILQ_EMPTY(&sched->ready));
 }
 
+/*
+ * 调度器主循环
+ */
 void
 lthread_run(void)
 {
@@ -173,25 +183,27 @@ lthread_run(void)
     int is_eof = 0;
 
     sched = lthread_get_sched();
+
     /* scheduler not initiliazed, and no lthreads where created */
     if (sched == NULL)
         return;
 
-    while (!_lthread_sched_isdone(sched)) { // 是否还有协程需要处理
+    while (!_lthread_sched_isdone(sched)) { /* 如果没有协程, 那么直接退出 */
 
         /* 1. start by checking if a sleeping thread needs to wakeup */
-        _lthread_resume_expired(sched); // 唤醒已经超时的协程
+        _lthread_resume_expired(sched); /* 唤醒已经超时的协程 */
 
         /* 2. check to see if we have any ready threads to run */
-        while (!TAILQ_EMPTY(&sched->ready)) { // 从准备队列中找到一个协程
+        while (!TAILQ_EMPTY(&sched->ready)) { /* 从准备队列中找到一个协程 */
+
             TAILQ_FOREACH_SAFE(lt, &sched->ready, ready_next, lt_tmp) {
                 TAILQ_REMOVE(&lt->sched->ready, lt, ready_next);
-                _lthread_resume(lt); // 恢复lt这个协程的运行
+                _lthread_resume(lt); /* 恢复lt这个协程的运行 */
             }
         }
 
         /* 3. resume lthreads we received from lthread_compute, if any */
-        while (1) { // 处理那些完成IO的协程
+        while (1) { /* 处理那些完成IO的协程 */
             assert(pthread_mutex_lock(&sched->defer_mutex) == 0);
             lt = TAILQ_FIRST(&sched->defer);
             if (lt == NULL) {
@@ -201,15 +213,15 @@ lthread_run(void)
             TAILQ_REMOVE(&sched->defer, lt, defer_next);
             assert(pthread_mutex_unlock(&sched->defer_mutex) == 0);
             LIST_REMOVE(lt, busy_next);
-            _lthread_resume(lt); // 恢复运行
+            _lthread_resume(lt); /* 恢复运行 */
         }
 
         /* 4. check if we received any events after lthread_poll */
-        // 监听IO是否可读写
+        /* 监听IO是否可读写(epoll_wait) */
         _lthread_poll();
 
         /* 5. fire up lthreads that are ready to run */
-        while (sched->num_new_events) { // 处理可读写的fd
+        while (sched->num_new_events) { /* 处理可读写的fd */
             p = --sched->num_new_events;
 
             fd = _lthread_poller_ev_get_fd(&sched->eventlist[p]);
@@ -218,7 +230,7 @@ lthread_run(void)
              * We got signaled via trigger to wakeup from polling & rusume file io.
              * Those lthreads will get handled in step 4.
              */
-            if (fd == sched->eventfd) {
+            if (fd == sched->eventfd) { /* 如果是通知fd, 那么不用处理这个 */
                 _lthread_poller_ev_clear_trigger();
                 continue;
             }
@@ -227,19 +239,20 @@ lthread_run(void)
             if (is_eof)
                 errno = ECONNRESET;
 
-            lt_read = _lthread_desched_event(fd, LT_EV_READ);
-            if (lt_read != NULL) { // 可读
+            lt_read = _lthread_desched_event(fd, LT_EV_READ); /* 获取读事件是否可用 */
+            if (lt_read != NULL) { /* 可读 */
                 if (is_eof)
                     lt_read->state |= BIT(LT_ST_FDEOF);
                 _lthread_resume(lt_read);
             }
 
-            lt_write = _lthread_desched_event(fd, LT_EV_WRITE);
-            if (lt_write != NULL) { // 可写
+            lt_write = _lthread_desched_event(fd, LT_EV_WRITE); /* 获取写事件是否可用 */
+            if (lt_write != NULL) { /* 可写 */
                 if (is_eof)
                     lt_write->state |= BIT(LT_ST_FDEOF);
                 _lthread_resume(lt_write);
             }
+
             is_eof = 0;
 
             assert(lt_write != NULL || lt_read != NULL);
@@ -256,12 +269,16 @@ lthread_run(void)
  * rbtree. This is safe to be called even if the lthread wasn't waiting on an
  * event.
  */
+/*
+ * 清除协程的事件监听
+ */
 void
 _lthread_cancel_event(struct lthread *lt)
 {
     if (lt->state & BIT(LT_ST_WAIT_READ)) {
         _lthread_poller_ev_clear_rd(FD_ONLY(lt->fd_wait));
         lt->state &= CLEARBIT(LT_ST_WAIT_READ);
+
     } else if (lt->state & BIT(LT_ST_WAIT_WRITE)) {
         _lthread_poller_ev_clear_wr(FD_ONLY(lt->fd_wait));
         lt->state &= CLEARBIT(LT_ST_WAIT_WRITE);
@@ -278,7 +295,9 @@ _lthread_cancel_event(struct lthread *lt)
  * It also deschedules the lthread from sleeping in case it was in sleeping
  * tree.
  */
-// 唤醒fd对应协程
+/*
+ * 唤醒fd对应协程
+ */
 struct lthread *
 _lthread_desched_event(int fd, enum lthread_event e)
 {
@@ -288,8 +307,8 @@ _lthread_desched_event(int fd, enum lthread_event e)
 
     lt = RB_FIND(lthread_rb_wait, &sched->waiting, &find_lt);
     if (lt != NULL) {
-        RB_REMOVE(lthread_rb_wait, &lt->sched->waiting, lt);
-        _lthread_desched_sleep(lt);
+        RB_REMOVE(lthread_rb_wait, &lt->sched->waiting, lt); /* 从红黑树中删除 */
+        _lthread_desched_sleep(lt);                          /* 从sleep队列中删除 */
     }
 
     return (lt);
@@ -316,20 +335,29 @@ _lthread_sched_event(struct lthread *lt, int fd, enum lthread_event e,
         assert(0);
     }
 
-    if (e == LT_EV_READ) { // 监听读事件
+    if (e == LT_EV_READ) {                  /* 监听读事件 */
         st = LT_ST_WAIT_READ;
-        _lthread_poller_ev_register_rd(fd);
-    } else if (e == LT_EV_WRITE) { // 监听写事件
+        _lthread_poller_ev_register_rd(fd); /* 注册读事件 */
+
+    } else if (e == LT_EV_WRITE) {          /* 监听写事件 */
         st = LT_ST_WAIT_WRITE;
-        _lthread_poller_ev_register_wr(fd);
-    } else
+        _lthread_poller_ev_register_wr(fd); /* 注册写事件 */
+
+    } else {
         assert(0);
+    }
 
     lt->state |= BIT(st);
-    lt->fd_wait = FD_KEY(fd, e); // 生成key
-    lt_tmp = RB_INSERT(lthread_rb_wait, &lt->sched->waiting, lt);
+    lt->fd_wait = FD_KEY(fd, e);  /* 生成key */
+
+    lt_tmp = RB_INSERT(lthread_rb_wait, &lt->sched->waiting, lt); /* 插入到等待红黑树中 (这样协程上下文才不会丢失, 当fd可读写的时候会被唤醒) */
+
     assert(lt_tmp == NULL);
-    _lthread_sched_sleep(lt, timeout); // 睡眠当前协程
+
+    _lthread_sched_sleep(lt, timeout); /* 睡眠当前协程 */
+
+    /* 这里会被唤醒 */
+
     lt->fd_wait = -1;
     lt->state &= CLEARBIT(st);
 }
@@ -355,7 +383,9 @@ _lthread_desched_sleep(struct lthread *lt)
  * rbtree and setting the lthread state to LT_ST_SLEEPING.
  * lthread state is cleared upon resumption or expiry.
  */
-// 睡眠lt协程
+/*
+ * 睡眠lt协程
+ */
 void
 _lthread_sched_sleep(struct lthread *lt, uint64_t msecs)
 {
@@ -369,7 +399,7 @@ _lthread_sched_sleep(struct lthread *lt, uint64_t msecs)
     lt->sleep_usecs = _lthread_diff_usecs(lt->sched->birth,
         _lthread_usec_now()) + usecs;
     while (msecs) {
-        lt_tmp = RB_INSERT(lthread_rb_sleep, &lt->sched->sleeping, lt); // 插入到红黑树中
+        lt_tmp = RB_INSERT(lthread_rb_sleep, &lt->sched->sleeping, lt); /* 插入到红黑树中 */
         if (lt_tmp) {
             lt->sleep_usecs++;
             continue;
@@ -378,9 +408,9 @@ _lthread_sched_sleep(struct lthread *lt, uint64_t msecs)
         break;
     }
 
-    _lthread_yield(lt); // 然出CPU
+    _lthread_yield(lt); /* 然出CPU */
 
-    // 执行到这里代表此协程已经被唤醒
+    /* 执行到这里代表此协程已经被唤醒 */
     if (msecs > 0)
         lt->state &= CLEARBIT(LT_ST_SLEEPING);
     lt->sleep_usecs = 0;
@@ -390,11 +420,11 @@ void
 _lthread_sched_busy_sleep(struct lthread *lt, uint64_t msecs)
 {
 
-    LIST_INSERT_HEAD(&lt->sched->busy, lt, busy_next); // 插入到忙队列中
+    LIST_INSERT_HEAD(&lt->sched->busy, lt, busy_next); /* 插入到忙队列中 */
     lt->state |= BIT(LT_ST_BUSY);
-    _lthread_sched_sleep(lt, msecs); // 睡眠
-    lt->state &= CLEARBIT(LT_ST_BUSY);
-    LIST_REMOVE(lt, busy_next); // 从忙队列中删除
+    _lthread_sched_sleep(lt, msecs);    /* 睡眠 */
+    lt->state &= CLEARBIT(LT_ST_BUSY);  /* 清除忙标志 */
+    LIST_REMOVE(lt, busy_next);         /* 从忙队列中删除 */
 }
 
 /*
@@ -402,30 +432,31 @@ _lthread_sched_busy_sleep(struct lthread *lt, uint64_t msecs)
  * on one or not, and deschedules it from sleeping rbtree in case it was
  * sleeping.
  */
-// 唤醒那些睡眠时间完成的协程
+/*
+ * 唤醒那些睡眠时间完成的协程
+ */
 static void
 _lthread_resume_expired(struct lthread_sched *sched)
 {
     struct lthread *lt = NULL;
-    //struct lthread *lt_tmp = NULL;
     uint64_t t_diff_usecs = 0;
 
     /* current scheduler time */
     t_diff_usecs = _lthread_diff_usecs(sched->birth, _lthread_usec_now());
 
     while (1) {
-        lt = RB_MIN(lthread_rb_sleep, &sched->sleeping); // 找到睡眠中最早醒来的协程
+        lt = RB_MIN(lthread_rb_sleep, &sched->sleeping); /* 找到睡眠中最早醒来的协程 */
         if (lt == NULL)
             break;
 
-        if (lt->sleep_usecs <= t_diff_usecs) { // 协程已经睡眠足够
+        if (lt->sleep_usecs <= t_diff_usecs) { /* 协程已经睡眠足够 */
 
             _lthread_cancel_event(lt);         // 取消IO事件
             _lthread_desched_sleep(lt);        // 把当前协程从睡眠队列中删除
             lt->state |= BIT(LT_ST_EXPIRED);   // 添加超时标志
 
             /* don't clear expired if lthread exited/cancelled */
-            if (_lthread_resume(lt) != -1) // 恢复此协程的运行
+            if (_lthread_resume(lt) != -1)     // 恢复此协程的运行
                 lt->state &= CLEARBIT(LT_ST_EXPIRED);
 
             continue;
