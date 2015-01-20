@@ -177,7 +177,7 @@ lthread_run(void)
     if (sched == NULL)
         return;
 
-    while (!_lthread_sched_isdone(sched)) {
+    while (!_lthread_sched_isdone(sched)) { // 是否还有协程需要处理
 
         /* 1. start by checking if a sleeping thread needs to wakeup */
         _lthread_resume_expired(sched); // 唤醒已经超时的协程

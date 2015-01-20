@@ -27,6 +27,21 @@
  */
 
 
+/*
+ *                       [master-coroutine]
+ *                       /   ^       \    ^
+ *                resume/    |  resume\   |
+ *                     +     +         +  +
+ *                     |    /yield     |   \yield
+ *                     v   /           v    \
+ *   --------------------------------------------------------- worker-coroutine-queues
+ *   ... --> [worker-coroutine] --> [worker-coroutine] --> ...
+ *
+ *
+ * 1) master coroutine call resume() function to wake up a worker coroutine context to run.
+ * 2) worker coroutine call yield() function to return to master coroutine context to run.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -123,10 +138,11 @@ _exec(void *lt)
 #if defined(__llvm__) && defined(__x86_64__)
   __asm__ ("movq 16(%%rbp), %[lt]" : [lt] "=r" (lt));
 #endif
-    ((struct lthread *)lt)->fun(((struct lthread *)lt)->arg);
-    ((struct lthread *)lt)->state |= BIT(LT_ST_EXITED);
 
-    _lthread_yield(lt);
+    ((struct lthread *)lt)->fun(((struct lthread *)lt)->arg);
+    ((struct lthread *)lt)->state |= BIT(LT_ST_EXITED); // 设置退出标志
+
+    _lthread_yield(lt); // 让出CPU
 }
 
 // 切换CPU执行上下文, 让出CPU
@@ -174,7 +190,7 @@ _lthread_resume(struct lthread *lt)
     sched->current_lthread = lt;        // 设置当前运行的协程
     _switch(&lt->ctx, &lt->sched->ctx); // 切换运行上下文, 把lt设置为当前执行的上下文
     sched->current_lthread = NULL;      // 回到主协程的执行上下文, 清空当前运行的上下文
-    _lthread_madvise(lt);
+    _lthread_madvise(lt);               // 告诉操作系统从栈内存开始
 
     if (lt->state & BIT(LT_ST_EXITED)) { // 此协程已经退出
         if (lt->lt_join) {
