@@ -55,11 +55,11 @@ static pthread_once_t key_once = PTHREAD_ONCE_INIT;
 
 
 
-/**
+/****************************************
  * 交换CPU执行上下文
  * @param new_ctx, 要切换到的协程上下文
  * @param cur_ctx, 要被切换的协程上下文
- */
+ ****************************************/
 int _switch(struct cpu_ctx *new_ctx, struct cpu_ctx *cur_ctx);
 #ifdef __i386__
 __asm__ (
@@ -126,10 +126,10 @@ _exec(void *lt)
 #if defined(__llvm__) && defined(__x86_64__)
   __asm__ ("movq 16(%%rbp), %[lt]" : [lt] "=r" (lt));
 #endif
-    ((struct lthread *)lt)->fun(((struct lthread *)lt)->arg);
-    ((struct lthread *)lt)->state |= BIT(LT_ST_EXITED);
+    ((struct lthread *)lt)->fun(((struct lthread *)lt)->arg); // 执行协程函数
+    ((struct lthread *)lt)->state |= BIT(LT_ST_EXITED);       // 设置退出标识
 
-    _lthread_yield(lt);
+    _lthread_yield(lt);  // 让出CPU, 返回到调度程序
 }
 
 /**
