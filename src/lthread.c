@@ -27,6 +27,21 @@
  */
 
 
+/*
+ *                       [master-coroutine]
+ *                       /   ^       \    ^
+ *                resume/    |  resume\   |
+ *                     +     +         +  +
+ *                     |    /yield     |   \yield
+ *                     v   /           v    \
+ *   --------------------------------------------------------- worker-coroutine-queues
+ *   ... --> [worker-coroutine] --> [worker-coroutine] --> ...
+ *
+ *
+ * 1) master coroutine call resume() function to wake up a worker coroutine context to run.
+ * 2) worker coroutine call yield() function to return to master coroutine context to run.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -126,6 +141,7 @@ _exec(void *lt)
 #if defined(__llvm__) && defined(__x86_64__)
   __asm__ ("movq 16(%%rbp), %[lt]" : [lt] "=r" (lt));
 #endif
+
     ((struct lthread *)lt)->fun(((struct lthread *)lt)->arg); // 执行协程函数
     ((struct lthread *)lt)->state |= BIT(LT_ST_EXITED);       // 设置退出标识
 
